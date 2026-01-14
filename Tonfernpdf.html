@@ -1041,7 +1041,7 @@
         pages.forEach(p => merged.addPage(p));
       }
       const bytes = await merged.save();
-      downloadBlob(bytes, 'merged.pdf', 'application/pdf');
+      await downloadBlob(bytes, 'merged.pdf', 'application/pdf');
       showNotification('Done!');
     };
 
@@ -1084,29 +1084,70 @@
       const newPdf = await PDFLib.PDFDocument.create();
       const pages = await newPdf.copyPages(splitDoc, selected);
       pages.forEach(p => newPdf.addPage(p));
-      downloadBlob(await newPdf.save(), 'split.pdf', 'application/pdf');
+      await downloadBlob(await newPdf.save(), 'split.pdf', 'application/pdf');
+    };
+
+    // Split PDF Extra Buttons
+    document.getElementById('selectAllBtn').onclick = () => {
+      document.querySelectorAll('#pagesGrid .page-thumb').forEach(div => div.classList.add('selected'));
+    };
+    document.getElementById('deselectAllBtn').onclick = () => {
+      document.querySelectorAll('#pagesGrid .page-thumb').forEach(div => div.classList.remove('selected'));
+    };
+    document.getElementById('splitClearBtn').onclick = () => {
+      splitFile = null;
+      splitDoc = null;
+      document.getElementById('splitFileInput').value = '';
+      document.getElementById('pagesGrid').innerHTML = '';
+      document.getElementById('rangeSelector').style.display = 'none';
+      document.getElementById('splitActions').style.display = 'none';
+      document.getElementById('splitUploadArea').style.display = 'block';
     };
 
     // --- PDF to JPG ---
     let jpgFile = null, jpgDoc = null;
     const jpgInput = document.getElementById('pdfToJpgFileInput');
     document.getElementById('pdfToJpgUploadArea').onclick = () => jpgInput.click();
+    async function renderPdfToJpgPages() {
+      const grid = document.getElementById('pdfToJpgPagesGrid');
+      grid.innerHTML = '';
+      grid.style.display = 'grid';
+      for (let i = 1; i <= jpgDoc.numPages; i++) {
+        const pg = await jpgDoc.getPage(i);
+        const vp = pg.getViewport({ scale: 0.2 });
+        const cvs = document.createElement('canvas');
+        cvs.width = vp.width; cvs.height = vp.height;
+        await pg.render({ canvasContext: cvs.getContext('2d'), viewport: vp }).promise;
+        const div = document.createElement('div');
+        div.className = 'page-thumb selected';
+        div.innerHTML = `<div class="page-checkmark">✓</div><canvas class="page-thumb-canvas"></canvas><div class="page-thumb-label">Page ${i}</div>`;
+        div.querySelector('canvas').replaceWith(cvs);
+        div.onclick = () => { div.classList.toggle('selected'); };
+        grid.appendChild(div);
+      }
+    }
+
     jpgInput.onchange = async (e) => {
       jpgFile = e.target.files[0];
       if (!jpgFile) return;
       showNotification('Loading...');
       jpgDoc = await pdfjsLib.getDocument({ data: await jpgFile.arrayBuffer() }).promise;
+      await renderPdfToJpgPages();
       document.getElementById('pdfToJpgUploadArea').style.display = 'none';
       document.getElementById('pdfToJpgQualitySelector').style.display = 'block';
       document.getElementById('pdfToJpgActions').style.display = 'flex';
     };
+
     document.getElementById('pdfToJpgConvertBtn').onclick = async () => {
       const scale = parseFloat(document.getElementById('qualitySelect').value);
+      const pageDivs = [...document.querySelectorAll('#pdfToJpgPagesGrid .page-thumb')];
+      const selectedIndices = pageDivs.map((div, index) => div.classList.contains('selected') ? index + 1 : null).filter(i => i !== null);
+
+      if (selectedIndices.length === 0) return showNotification('Select pages to convert');
+
       showNotification('Converting (this may take time)...');
-      const zip = new JSZip(); // Assuming JSZip or do individual
-      // For simplicity in this demo, downloading first page as JPG or a ZIP if we had the lib.
-      // Tonfern original code downloaded individual files. We will download individual files.
-      for (let i = 1; i <= jpgDoc.numPages; i++) {
+
+      for (const i of selectedIndices) {
         const page = await jpgDoc.getPage(i);
         const viewport = page.getViewport({ scale: scale });
         const canvas = document.createElement('canvas');
@@ -1122,6 +1163,24 @@
       showNotification('Done! Files downloading...');
     };
 
+    document.getElementById('pdfToJpgSelectAllBtn').onclick = () => {
+      document.querySelectorAll('#pdfToJpgPagesGrid .page-thumb').forEach(div => div.classList.add('selected'));
+    };
+    document.getElementById('pdfToJpgDeselectAllBtn').onclick = () => {
+      document.querySelectorAll('#pdfToJpgPagesGrid .page-thumb').forEach(div => div.classList.remove('selected'));
+    };
+
+    document.getElementById('pdfToJpgClearBtn').onclick = () => {
+      jpgFile = null;
+      jpgDoc = null;
+      document.getElementById('pdfToJpgFileInput').value = '';
+      document.getElementById('pdfToJpgPagesGrid').innerHTML = '';
+      document.getElementById('pdfToJpgPagesGrid').style.display = 'none';
+      document.getElementById('pdfToJpgQualitySelector').style.display = 'none';
+      document.getElementById('pdfToJpgActions').style.display = 'none';
+      document.getElementById('pdfToJpgUploadArea').style.display = 'block';
+    };
+
     // --- PHOTO TO PDF ---
     let photoFiles = [];
     const photoInput = document.getElementById('jpgFileInput');
@@ -1131,7 +1190,27 @@
       document.getElementById('jpgUploadArea').style.display = 'none';
       document.getElementById('jpgLayoutSelector').style.display = 'block';
       document.getElementById('jpgActions').style.display = 'flex';
-      // Render list omitted for brevity
+      renderPhotoFiles();
+    };
+
+    function renderPhotoFiles() {
+      const list = document.getElementById('jpgFilesList');
+      list.innerHTML = '';
+      photoFiles.forEach((f, i) => {
+        const div = document.createElement('div');
+        div.className = 'file-card';
+        div.innerHTML = `<div class="file-preview">🖼️</div><div class="file-info"><div class="file-name">${f.name}</div></div><button class="icon-btn" onclick="removePhotoFile(${i})">✖</button>`;
+        list.appendChild(div);
+      });
+    }
+    window.removePhotoFile = (i) => { photoFiles.splice(i, 1); renderPhotoFiles(); };
+    document.getElementById('jpgClearAllBtn').onclick = () => {
+      photoFiles = [];
+      document.getElementById('jpgFilesList').innerHTML = '';
+      document.getElementById('jpgFileInput').value = '';
+      document.getElementById('jpgLayoutSelector').style.display = 'none';
+      document.getElementById('jpgActions').style.display = 'none';
+      document.getElementById('jpgUploadArea').style.display = 'block';
     };
     document.getElementById('jpgConvertBtn').onclick = async () => {
       if (photoFiles.length === 0) return;
@@ -1152,7 +1231,8 @@
         const dataUrl = await readFileAsDataURL(f);
         doc.addImage(dataUrl, format, imgParams.x, imgParams.y, imgParams.w, imgParams.h);
       }
-      doc.save('photos.pdf');
+      const blob = doc.output('blob');
+      await downloadBlob(blob, 'photos.pdf', 'application/pdf');
       showNotification('Done!');
     };
 
@@ -1197,8 +1277,16 @@
         const p = pdfDoc.addPage([vp.width, vp.height]);
         p.drawImage(img, { x: 0, y: 0, width: vp.width, height: vp.height });
       }
-      downloadBlob(await pdfDoc.save(), 'compressed.pdf', 'application/pdf');
+      await downloadBlob(await pdfDoc.save(), 'compressed.pdf', 'application/pdf');
       showNotification('Done!');
+    };
+
+    document.getElementById('compressClearBtn').onclick = () => {
+      document.getElementById('compressFileInput').value = '';
+      document.getElementById('compressSettings').style.display = 'none';
+      document.getElementById('compressActions').style.display = 'none';
+      document.getElementById('compressResult').style.display = 'none';
+      document.getElementById('compressUploadArea').style.display = 'block';
     };
 
     // --- PDF TO WORD ---
@@ -1214,8 +1302,15 @@
         text += content.items.map(s => s.str).join(' ') + '\n\n';
       }
       const blob = new Blob([text], { type: 'text/plain' });
-      downloadBlob(blob, file.name.replace('.pdf', '.txt'), 'text/plain');
+      await downloadBlob(blob, file.name.replace('.pdf', '.txt'), 'text/plain');
       showNotification('Converted to Text (DOCX requires complex libs)');
+    };
+
+    document.getElementById('pdfToWordClearBtn').onclick = () => {
+      document.getElementById('pdfToWordFileInput').value = '';
+      document.getElementById('pdfToWordPreview').style.display = 'none';
+      document.getElementById('pdfToWordActions').style.display = 'none';
+      document.getElementById('pdfToWordUploadArea').style.display = 'block';
     };
 
     // --- ORGANIZE PDF ---
@@ -1244,14 +1339,34 @@
       }
       showNotification('Loaded. (Save will save as-is in this demo v2)');
     };
+
+    document.getElementById('organizeClearBtn').onclick = () => {
+      orgDoc = null;
+      document.getElementById('organizeFileInput').value = '';
+      document.getElementById('organizeGrid').innerHTML = '';
+      document.getElementById('organizeUploadArea').style.display = 'block';
+    };
     document.getElementById('saveOrganizedBtn').onclick = async () => {
       if (!orgDoc) return;
-      downloadBlob(await orgDoc.save(), 'organized.pdf', 'application/pdf');
+      await downloadBlob(await orgDoc.save(), 'organized.pdf', 'application/pdf');
     };
 
     // --- UNLOCK & PROTECT ---
+    const unlockInput = document.getElementById('unlockFileInput');
+    document.getElementById('unlockUploadArea').onclick = () => unlockInput.click();
+    unlockInput.onchange = () => {
+      document.getElementById('unlockUploadArea').style.display = 'none';
+      document.getElementById('unlockPasswordArea').style.display = 'block';
+    };
+    document.getElementById('unlockClearBtn').onclick = () => {
+      unlockInput.value = '';
+      document.getElementById('unlockPassword').value = '';
+      document.getElementById('unlockPasswordArea').style.display = 'none';
+      document.getElementById('unlockUploadArea').style.display = 'block';
+    };
+
     document.getElementById('unlockBtn').onclick = async () => {
-      const f = document.getElementById('unlockFileInput').files[0];
+      const f = unlockInput.files[0];
       const pwd = document.getElementById('unlockPassword').value;
       if (!f) return;
       try {
@@ -1264,21 +1379,56 @@
           try { pdfDoc = await PDFLib.PDFDocument.load(data, { ignoreEncryption: true }); }
           catch (e2) { throw new Error('Cannot unlock'); }
         }
-        downloadBlob(await pdfDoc.save(), 'unlocked.pdf', 'application/pdf');
+        await downloadBlob(await pdfDoc.save(), 'unlocked.pdf', 'application/pdf');
         showNotification('Unlocked!');
       } catch (e) { showNotification('Failed to unlock. Password might be wrong.'); }
     };
 
+    const protectInput = document.getElementById('protectFileInput');
+    document.getElementById('protectUploadArea').onclick = () => protectInput.click();
+    protectInput.onchange = () => {
+      document.getElementById('protectUploadArea').style.display = 'none';
+      document.getElementById('protectPasswordArea').style.display = 'block';
+    };
+    document.getElementById('protectClearBtn').onclick = () => {
+      protectInput.value = '';
+      document.getElementById('protectPassword').value = '';
+      document.getElementById('protectPasswordConfirm').value = '';
+      document.getElementById('protectPasswordArea').style.display = 'none';
+      document.getElementById('protectUploadArea').style.display = 'block';
+    };
+
     document.getElementById('protectBtn').onclick = async () => {
-      const f = document.getElementById('protectFileInput').files[0];
+      const f = protectInput.files[0];
       const pwd = document.getElementById('protectPassword').value;
       if (!f || !pwd) return;
       const pdf = await PDFLib.PDFDocument.load(await f.arrayBuffer());
       const bytes = await pdf.save({ userPassword: pwd, ownerPassword: pwd });
-      downloadBlob(bytes, 'protected.pdf', 'application/pdf');
+      await downloadBlob(bytes, 'protected.pdf', 'application/pdf');
     };
 
-    function downloadBlob(data, name, type) {
+    // Updated downloadBlob to support Save As
+    async function downloadBlob(data, name, type) {
+      if (window.showSaveFilePicker) {
+        try {
+          const extension = name.split('.').pop();
+          const handle = await window.showSaveFilePicker({
+            suggestedName: name,
+            types: [{
+              description: extension.toUpperCase() + ' File',
+              accept: { [type]: ['.' + extension] },
+            }],
+          });
+          const writable = await handle.createWritable();
+          await writable.write(data);
+          await writable.close();
+          return;
+        } catch (err) {
+          if (err.name === 'AbortError') return; // User cancelled
+          console.error('Save As failed, falling back to download', err);
+        }
+      }
+      // Fallback
       const b = new Blob([data], { type });
       const u = URL.createObjectURL(b);
       const a = document.createElement('a'); a.href = u; a.download = name; a.click();
