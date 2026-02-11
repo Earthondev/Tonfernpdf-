@@ -38,7 +38,7 @@
       opacity: 0.6;
       animation: snowfall 15s linear infinite;
       pointer-events: none;
-      z-index: 9999;
+      z-index: -1;
       letter-spacing: 40px;
     }
 
@@ -52,7 +52,7 @@
       opacity: 0.4;
       animation: snowfall 20s linear infinite 3s;
       pointer-events: none;
-      z-index: 9999;
+      z-index: -1;
       letter-spacing: 60px;
     }
 
@@ -698,7 +698,20 @@
       border-radius: 12px;
       padding: 12px;
       box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-      cursor: move;
+      cursor: grab;
+    }
+
+    .file-handle {
+      cursor: grab;
+      color: #ccc;
+      font-size: 20px;
+      padding: 0 4px;
+    }
+
+    .file-card.sortable-chosen {
+      cursor: grabbing;
+      background: #fdf2f2;
+      box-shadow: 0 8px 24px rgba(212, 0, 24, 0.15);
     }
 
     .pages-grid {
@@ -837,7 +850,7 @@
     }
   </style>
 
-  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Tailwind removed to fix console warnings as per instructions -->
 </head>
 
 <body>
@@ -1699,6 +1712,10 @@
 
     // Helper: Notification
     function showNotification(msg) {
+      // Clear existing notifications to prevent stacking/duplication
+      const existing = document.querySelectorAll('.notification');
+      existing.forEach(n => n.remove());
+
       const n = document.createElement('div');
       n.className = 'notification';
       if (msg.toLowerCase().includes('done') || msg.toLowerCase().includes('success') || msg.toLowerCase().includes('saved')) {
@@ -1799,6 +1816,17 @@
 
     document.getElementById('mergeBtn').onclick = async () => {
       if (mergeFiles.length < 2) return showNotification('Select at least 2 files');
+
+      const totalSize = mergeFiles.reduce((acc, f) => acc + f.size, 0);
+      if (totalSize > 250 * 1024 * 1024) {
+        if (!confirm('Total size is large (>250MB). Browser might slow down or crash. Continue?')) return;
+      }
+
+      const btn = document.getElementById('mergeBtn');
+      const originalText = btn.innerText;
+      btn.innerText = 'Merging...';
+      btn.disabled = true;
+
       showNotification('Merging...');
       setProgress(5);
       const { PDFDocument } = PDFLib;
@@ -1814,13 +1842,20 @@
         pages.forEach(p => merged.addPage(p));
 
         // Preserve metadata from the first file
-        if (i === 0) {
-          merged.setTitle(pdf.getTitle() || "");
-          merged.setAuthor(pdf.getAuthor() || "");
-          merged.setSubject(pdf.getSubject() || "");
-          merged.setKeywords(pdf.getKeywords() || "");
-          merged.setProducer(pdf.getProducer() || "");
-          merged.setCreator(pdf.getCreator() || "");
+        try {
+          if (pdf.getTitle()) merged.setTitle(pdf.getTitle());
+          if (pdf.getAuthor()) merged.setAuthor(pdf.getAuthor());
+          if (pdf.getSubject()) merged.setSubject(pdf.getSubject());
+          if (pdf.getProducer()) merged.setProducer(pdf.getProducer());
+          if (pdf.getCreator()) merged.setCreator(pdf.getCreator());
+
+          const kw = pdf.getKeywords();
+          if (kw) {
+            // pdf-lib expects an array of strings for keywords
+            merged.setKeywords(kw.split(',').map(k => k.trim()).filter(k => k));
+          }
+        } catch (metaErr) {
+          console.warn("Could not preserve all metadata:", metaErr);
         }
         setProgress(Math.round(5 + (i + 1) / mergeFiles.length * 85));
       }
@@ -1828,7 +1863,9 @@
       const bytes = await merged.save();
       setProgress(100);
       await downloadBlob(bytes, `${baseName}_merged.pdf`, 'application/pdf');
-      showNotification('Done!');
+      btn.innerText = originalText;
+      btn.disabled = false;
+      // Removed redundant Done! notification as downloadBlob already notifies the user.
     };
 
     // --- SPLIT PDF ---
@@ -1907,7 +1944,6 @@
         const zipContent = await zip.generateAsync({ type: "blob" });
         setProgress(100);
         await downloadBlob(zipContent, `${baseName}_split.zip`, 'application/zip');
-        showNotification('Done!');
       }
     };
 
@@ -2002,7 +2038,6 @@
         setProgress(100);
         await downloadBlob(zipContent, `${baseName}_images.zip`, 'application/zip');
       }
-      showNotification('Done!');
     };
 
     document.getElementById('pdfToJpgSelectAllBtn').onclick = () => {
@@ -2100,7 +2135,6 @@
       const bytes = doc.output('arraybuffer');
       setProgress(100);
       await downloadBlob(bytes, 'photos.pdf', 'application/pdf');
-      showNotification('Done!');
     };
 
     // --- DELETE PAGES ---
@@ -2154,7 +2188,6 @@
 
       const baseName = delFile.name.replace(/\.[^/.]+$/, "");
       await downloadBlob(await newPdf.save(), `${baseName}_deleted.pdf`, 'application/pdf');
-      showNotification('Done! Pages deleted.');
     };
 
     document.getElementById('delClearBtn').onclick = () => {
@@ -2212,7 +2245,6 @@
         const bytes = await pdfDoc.save({ useObjectStreams: true });
         const baseName = file.name.replace(/\.[^/.]+$/, "");
         await downloadBlob(bytes, `${baseName}_compressed.pdf`, 'application/pdf');
-        showNotification('Done - Safe Optimization Applied.');
       } else {
         showNotification('Re-imaging pages...');
         const pdfDoc = await PDFLib.PDFDocument.create();
@@ -2246,7 +2278,6 @@
         const finalBytes = await pdfDoc.save();
         setProgress(100);
         await downloadBlob(finalBytes, `${baseName}_compressed_aggressive.pdf`, 'application/pdf');
-        showNotification('Done! Aggressive Compression Complete.');
       }
     };
 
@@ -2309,7 +2340,6 @@
         const content = await zip.generateAsync({ type: "blob" });
         const baseName = file.name.replace(/\.[^/.]+$/, "");
         await downloadBlob(content, `${baseName}_extracted_images.zip`, 'application/zip');
-        showNotification(`Done! ${totalCount} images extracted.`);
       } else {
         showNotification('Extracting text content...');
         const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
@@ -2322,7 +2352,6 @@
         const blob = new Blob([text], { type: 'text/plain' });
         const baseName = file.name.replace(/\.[^/.]+$/, "");
         await downloadBlob(blob, `${baseName}_extracted.txt`, 'text/plain');
-        showNotification('Done! Text extracted.');
       }
     };
 
@@ -2356,7 +2385,10 @@
         const d = document.createElement('div');
         d.className = 'organize-page-card file-card';
         d.setAttribute('data-original-index', i);
-        d.innerHTML = `<img src="${cvs.toDataURL()}"><br>Page ${i + 1}`;
+        d.innerHTML = `
+          <div class="file-handle" style="position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.8); border-radius: 4px; padding: 2px;">⠿</div>
+          <img src="${cvs.toDataURL()}" style="width:100%; border-radius:8px;"><br>
+          <div style="text-align:center; font-weight:600; margin-top:8px;">Page ${i + 1}</div>`;
         grid.appendChild(d);
       }
       pdfJsDoc.destroy();
@@ -2383,6 +2415,12 @@
     };
     document.getElementById('saveOrganizedBtn').onclick = async () => {
       if (!appState.org.doc) return;
+
+      const btn = document.getElementById('saveOrganizedBtn');
+      const originalText = btn.innerText;
+      btn.innerText = 'Processing...';
+      btn.disabled = true;
+
       showNotification('Organizing pages...');
       const grid = document.getElementById('organizeGrid');
       const cards = Array.from(grid.querySelectorAll('.organize-page-card'));
@@ -2397,7 +2435,9 @@
       const bytes = await newPdf.save();
       const baseName = appState.org.file.name.replace(/\.[^/.]+$/, "");
       await downloadBlob(bytes, `${baseName}_organized.pdf`, 'application/pdf');
-      showNotification('Done! PDF Organized.');
+      btn.innerText = originalText;
+      btn.disabled = false;
+      // Removed redundant notification.
     };
 
     // --- UNLOCK & PROTECT ---
@@ -2430,7 +2470,6 @@
         }
         const baseName = f.name.replace(/\.[^/.]+$/, "");
         await downloadBlob(await pdfDoc.save(), `${baseName}_unlocked.pdf`, 'application/pdf');
-        showNotification('Unlocked!');
       } catch (e) { showNotification('Failed to unlock. Password might be wrong.'); }
     };
 
@@ -2634,6 +2673,7 @@
     };
 
     async function renderSignPage(num) {
+      if (!appState.sign.doc) return;
       const page = await appState.sign.doc.getPage(num);
       const viewport = page.getViewport({ scale: 1.0 });
       signCanvas = document.getElementById('signCanvas');
@@ -2650,7 +2690,7 @@
 
     document.getElementById('clearSigBtn').onclick = () => {
       sigCtx.clearRect(0, 0, signaturePad.width, signaturePad.height);
-      if (sigPlaced) updateSigOverlay();
+      if (appState.sign.placed) updateSigOverlay();
     };
 
     document.getElementById('prevSignPage').onclick = () => { if (appState.sign.pageNum > 1) { appState.sign.pageNum--; renderSignPage(appState.sign.pageNum); } };
@@ -2680,7 +2720,6 @@
 
       const baseName = document.getElementById('signFileInput').files[0].name.replace(/\.[^/.]+$/, "");
       await downloadBlob(await pdfDoc.save(), `${baseName}_signed.pdf`, 'application/pdf');
-      showNotification('Done! Signature applied.');
     };
 
     // SigBox MouseUp listener (singleton)
@@ -2813,7 +2852,6 @@
       const baseName = document.getElementById('textFileInput').files[0].name.replace(/\.[^/.]+$/, "");
       const pdfBytes = await pdfDoc.save();
       await downloadBlob(pdfBytes, `${baseName}_filled.pdf`, 'application/pdf');
-      showNotification('Done! Text Added.');
     };
 
     document.getElementById('textClearBtn').onclick = () => {
@@ -2885,7 +2923,6 @@
       const baseName = document.getElementById('wmFileInput').files[0].name.replace(/\.[^/.]+$/, "");
       const pdfBytes = await pdfDoc.save();
       await downloadBlob(pdfBytes, `${baseName}_watermarked.pdf`, 'application/pdf');
-      showNotification('Done! Watermark Added.');
     };
 
     document.getElementById('wmClearBtn').onclick = () => {
