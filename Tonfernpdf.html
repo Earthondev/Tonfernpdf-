@@ -4,8 +4,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TonfernPDF v3.0.1 - Local PDF Toolkit</title>
-  <meta name="version" content="3.0.1">
+  <title>TonfernPDF v3.0.2 - Local PDF Toolkit</title>
+  <meta name="version" content="3.0.2">
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
@@ -848,6 +848,17 @@
       font-size: 20px;
       cursor: grab;
     }
+
+    .spinner {
+      font-size: 24px;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      100% {
+        transform: rotate(360deg);
+      }
+    }
   </style>
 
   <!-- Tailwind removed to fix console warnings as per instructions -->
@@ -910,7 +921,7 @@
       </aside>
     </section>
     <footer class="footer">
-      <p>© 2026 TonfernPDF v3.0.0 — Local PDF Toolkit 🍊 🦆</p>
+      <p>© 2026 TonfernPDF v3.0.2 — Local PDF Toolkit 🍊 🦆</p>
       <p style="margin-top: 8px; font-size: 13px; color: #999;">Developed by <a href="https://github.com/earthondev"
           target="_blank" style="color: #D40018; text-decoration: none; font-weight: 600;">earthondev</a></p>
     </footer>
@@ -1771,9 +1782,19 @@
         const div = document.createElement('div');
         div.className = 'file-card';
         div.setAttribute('data-index', i);
+
+        // Check if thumbnail is already generated
+        let previewContent = '<div class="spinner">↻</div>';
+        if (f.thumbnailData) {
+          previewContent = `<img src="${f.thumbnailData}" style="width:100%; height:100%; object-fit:contain; border-radius:4px;">`;
+        } else {
+          // Async generate
+          generateMergeThumbnail(f, i);
+        }
+
         div.innerHTML = `
           <div class="file-handle">⠿</div>
-          <div class="file-preview">📄</div>
+          <div class="file-preview" id="merge-preview-${i}">${previewContent}</div>
           <div class="file-info">
             <div class="file-name">${f.name}</div>
             <div class="file-size">${(f.size / 1024).toFixed(1)} KB</div>
@@ -1789,13 +1810,45 @@
         handle: '.file-handle',
         ghostClass: 'sortable-ghost',
         onEnd: () => {
-          // Update mergeFiles array based on new DOM order
           const newOrder = Array.from(list.querySelectorAll('.file-card')).map(el => parseInt(el.getAttribute('data-index')));
           const reorderedFiles = newOrder.map(idx => mergeFiles[idx]);
           mergeFiles = reorderedFiles;
-          renderMergeFiles(); // Re-render to update indices if needed
+          renderMergeFiles();
         }
       });
+    }
+
+    async function generateMergeThumbnail(file, index) {
+      if (file.thumbnailData || file.isGeneratingThumbnail) return;
+      file.isGeneratingThumbnail = true;
+
+      try {
+        const buffer = await appState.getFileBuffer(file);
+        const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 0.3 }); // Thumbnail scale
+
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d');
+        await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+
+        file.thumbnailData = canvas.toDataURL(); // Cache it
+        file.isGeneratingThumbnail = false;
+
+        // Update UI if the element still exists waiting for this index
+        const el = document.getElementById(`merge-preview-${index}`);
+        if (el) {
+          el.innerHTML = `<img src="${file.thumbnailData}" style="width:100%; height:100%; object-fit:contain; border-radius:4px;">`;
+        }
+        pdf.destroy();
+      } catch (error) {
+        console.error("Thumbnail generation specific error:", error);
+        file.isGeneratingThumbnail = false;
+        const el = document.getElementById(`merge-preview-${index}`);
+        if (el) el.innerHTML = '📄';
+      }
     }
 
     window.removeMergeFile = (i) => {
@@ -2076,12 +2129,46 @@
       photoFiles.forEach((f, i) => {
         const div = document.createElement('div');
         div.className = 'file-card';
-        div.innerHTML = `<div class="file-preview">🖼️</div><div class="file-info"><div class="file-name">${f.name}</div></div><button class="icon-btn" onclick="removePhotoFile(${i})">✖</button>`;
+        div.setAttribute('data-index', i);
+
+        // Generate preview URL if not exists
+        if (!f.previewUrl) {
+          f.previewUrl = URL.createObjectURL(f);
+        }
+
+        div.innerHTML = `
+          <div class="file-handle">⠿</div>
+          <div class="file-preview"><img src="${f.previewUrl}" style="width:100%; height:100%; object-fit:cover; border-radius:4px;"></div>
+          <div class="file-info"><div class="file-name">${f.name}</div></div>
+          <button class="icon-btn" onclick="removePhotoFile(${i})">✖</button>`;
         list.appendChild(div);
       });
+
+      // Initialize Sortable for Photo
+      if (window.photoSortable) window.photoSortable.destroy();
+      window.photoSortable = new Sortable(list, {
+        animation: 150,
+        handle: '.file-handle',
+        ghostClass: 'sortable-ghost',
+        onEnd: () => {
+          const newOrder = Array.from(list.querySelectorAll('.file-card')).map(el => parseInt(el.getAttribute('data-index')));
+          const reorderedFiles = newOrder.map(idx => photoFiles[idx]);
+          photoFiles = reorderedFiles;
+          renderPhotoFiles();
+        }
+      });
     }
-    window.removePhotoFile = (i) => { photoFiles.splice(i, 1); renderPhotoFiles(); };
+
+    window.removePhotoFile = (i) => {
+      if (photoFiles[i].previewUrl) URL.revokeObjectURL(photoFiles[i].previewUrl);
+      photoFiles.splice(i, 1);
+      renderPhotoFiles();
+    };
+
     document.getElementById('jpgClearAllBtn').onclick = () => {
+      photoFiles.forEach(f => {
+        if (f.previewUrl) URL.revokeObjectURL(f.previewUrl);
+      });
       photoFiles = [];
       document.getElementById('jpgFilesList').innerHTML = '';
       document.getElementById('jpgFileInput').value = '';
