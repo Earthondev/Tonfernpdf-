@@ -4,13 +4,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TonfernPDF v3.0.2 - Local PDF Toolkit</title>
-  <meta name="version" content="3.0.2">
+  <title>TonfernPDF v3.0.3 - Local PDF Toolkit</title>
+  <meta name="version" content="3.0.3">
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="https://unpkg.com/pdf-lib-plus-encrypt@1.1.0/dist/pdf-lib-plus-encrypt.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/docx/7.8.2/docx.min.js"></script>
+  <script src="https://unpkg.com/docx@7.1.0/build/index.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
   <style>
@@ -699,6 +699,7 @@
       padding: 12px;
       box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
       cursor: grab;
+      position: relative;
     }
 
     .file-handle {
@@ -768,6 +769,40 @@
 
       .nav-links {
         display: none;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .category-tabs {
+        padding: 0 12px 20px;
+        overflow-x: visible;
+      }
+
+      .tabs-container {
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .tab {
+        flex: 1 1 calc(50% - 8px);
+        text-align: center;
+        padding: 10px 12px;
+      }
+
+      .tab.active {
+        transform: none;
+      }
+
+      .persona-container {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+        padding: 0 12px;
+      }
+
+      .persona-tab {
+        white-space: nowrap;
       }
     }
 
@@ -921,7 +956,7 @@
       </aside>
     </section>
     <footer class="footer">
-      <p>© 2026 TonfernPDF v3.0.2 — Local PDF Toolkit 🍊 🦆</p>
+      <p>© 2026 TonfernPDF v3.0.3 — Local PDF Toolkit 🍊 🦆</p>
       <p style="margin-top: 8px; font-size: 13px; color: #999;">Developed by <a href="https://github.com/earthondev"
           target="_blank" style="color: #D40018; text-decoration: none; font-weight: 600;">earthondev</a></p>
     </footer>
@@ -1237,9 +1272,9 @@
     </div>
     <div class="merge-content">
       <div class="expectation-banner">
-        <div class="expectation-item">✔ Text selectable: <span class="expectation-tag yes">Yes</span></div>
-        <div class="expectation-item">✔ Layout preserved: <span class="expectation-tag high">High</span></div>
-        <div class="expectation-item">✔ Best for: <span class="expectation-tag">Decryption</span></div>
+        <div class="expectation-item">✔ Text selectable: <span class="expectation-tag no">No</span></div>
+        <div class="expectation-item">✔ Layout preserved: <span class="expectation-tag med">Medium</span></div>
+        <div class="expectation-item">✔ Best for: <span class="expectation-tag">View/Print Unlock</span></div>
       </div>
       <div class="upload-area" id="unlockUploadArea"><button class="btn btn-primary btn-large">Select PDF</button><input
           type="file" id="unlockFileInput" class="upload-input" accept=".pdf"></div>
@@ -1552,13 +1587,26 @@
     }
 
     // --- ENTERPRISE CORE ---
+    function normalizeKeywords(input) {
+      if (Array.isArray(input)) return input.map(k => String(k).trim()).filter(Boolean);
+      return String(input || "")
+        .split(/,|;/)
+        .map(k => k.trim())
+        .filter(Boolean);
+    }
+
     const appState = {
       fileBufferCache: new Map(),
       async getFileBuffer(file) {
+        if (!file) return null;
         if (!this.fileBufferCache.has(file)) {
-          this.fileBufferCache.set(file, await file.arrayBuffer());
+          const original = await file.arrayBuffer();
+          // Keep an immutable master copy in cache. Callers always receive a fresh clone
+          // so downstream libs cannot detach the cached buffer.
+          this.fileBufferCache.set(file, original.slice(0));
         }
-        return this.fileBufferCache.get(file);
+        const cached = this.fileBufferCache.get(file);
+        return cached.slice(0);
       },
       clearCache() {
         this.fileBufferCache.clear();
@@ -1573,8 +1621,8 @@
       photo: { files: [] },
       del: { file: null, doc: null, buffer: null },
       org: { file: null, doc: null, buffer: null },
-      sign: { doc: null, buffer: null, pageNum: 1, pos: { x: 50, y: 50 }, placed: false, isDrawing: false },
-      text: { doc: null, buffer: null, pageNum: 1, texts: [] }
+      sign: { file: null, doc: null, buffer: null, pageNum: 1, pos: { x: 50, y: 50 }, placed: false, isDrawing: false },
+      text: { file: null, doc: null, buffer: null, pageNum: 1, texts: [] }
     };
 
     const tools = [
@@ -1753,8 +1801,11 @@
         const content = activePage.querySelector('.merge-content');
         if (content) {
           const actions = activePage.querySelector('.merge-actions');
-          if (actions) content.insertBefore(container, actions);
-          else content.appendChild(container);
+          if (actions && actions.parentElement === content) {
+            content.insertBefore(container, actions);
+          } else {
+            content.appendChild(container);
+          }
         }
       }
       container.classList.add('show');
@@ -1880,45 +1931,46 @@
       btn.innerText = 'Merging...';
       btn.disabled = true;
 
-      showNotification('Merging...');
-      setProgress(5);
-      const { PDFDocument } = PDFLib;
-      const merged = await PDFDocument.create();
+      try {
+        setProgress(5);
+        const { PDFDocument } = PDFLib;
+        const merged = await PDFDocument.create();
 
-      const baseName = mergeFiles[0].name.replace(/\.[^/.]+$/, "");
+        const baseName = mergeFiles[0].name.replace(/\.[^/.]+$/, "");
 
-      for (let i = 0; i < mergeFiles.length; i++) {
-        const f = mergeFiles[i];
-        const buffer = await appState.getFileBuffer(f);
-        const pdf = await PDFDocument.load(buffer, { ignoreEncryption: true });
-        const pages = await merged.copyPages(pdf, pdf.getPageIndices());
-        pages.forEach(p => merged.addPage(p));
+        for (let i = 0; i < mergeFiles.length; i++) {
+          const f = mergeFiles[i];
+          const buffer = await appState.getFileBuffer(f);
+          const pdf = await PDFDocument.load(buffer, { ignoreEncryption: true });
+          const pages = await merged.copyPages(pdf, pdf.getPageIndices());
+          pages.forEach(p => merged.addPage(p));
 
-        // Preserve metadata from the first file
-        try {
-          if (pdf.getTitle()) merged.setTitle(pdf.getTitle());
-          if (pdf.getAuthor()) merged.setAuthor(pdf.getAuthor());
-          if (pdf.getSubject()) merged.setSubject(pdf.getSubject());
-          if (pdf.getProducer()) merged.setProducer(pdf.getProducer());
-          if (pdf.getCreator()) merged.setCreator(pdf.getCreator());
+          // Preserve metadata from the first file
+          try {
+            if (pdf.getTitle()) merged.setTitle(pdf.getTitle());
+            if (pdf.getAuthor()) merged.setAuthor(pdf.getAuthor());
+            if (pdf.getSubject()) merged.setSubject(pdf.getSubject());
+            if (pdf.getProducer()) merged.setProducer(pdf.getProducer());
+            if (pdf.getCreator()) merged.setCreator(pdf.getCreator());
 
-          const kw = pdf.getKeywords();
-          if (kw) {
-            // pdf-lib expects an array of strings for keywords
-            merged.setKeywords(kw.split(',').map(k => k.trim()).filter(k => k));
+            const keyArr = normalizeKeywords(pdf.getKeywords());
+            if (keyArr.length > 0) merged.setKeywords(keyArr);
+          } catch (metaErr) {
+            console.warn("Could not preserve all metadata:", metaErr);
           }
-        } catch (metaErr) {
-          console.warn("Could not preserve all metadata:", metaErr);
+          setProgress(Math.round(5 + (i + 1) / mergeFiles.length * 85));
         }
-        setProgress(Math.round(5 + (i + 1) / mergeFiles.length * 85));
-      }
 
-      const bytes = await merged.save();
-      setProgress(100);
-      await downloadBlob(bytes, `${baseName}_merged.pdf`, 'application/pdf');
-      btn.innerText = originalText;
-      btn.disabled = false;
-      // Removed redundant Done! notification as downloadBlob already notifies the user.
+        const bytes = await merged.save();
+        setProgress(100);
+        await downloadBlob(bytes, `${baseName}_merged.pdf`, 'application/pdf');
+      } catch (e) {
+        console.error(e);
+        showNotification('Failed to merge PDFs. ' + (e.message || e));
+      } finally {
+        btn.innerText = originalText;
+        btn.disabled = false;
+      }
     };
 
     // --- SPLIT PDF ---
@@ -2103,6 +2155,7 @@
     document.getElementById('pdfToJpgClearBtn').onclick = () => {
       jpgFile = null;
       jpgDoc = null;
+      jpgBuffer = null;
       document.getElementById('pdfToJpgFileInput').value = '';
       document.getElementById('pdfToJpgPagesGrid').innerHTML = '';
       document.getElementById('pdfToJpgPagesGrid').style.display = 'none';
@@ -2120,12 +2173,18 @@
       document.getElementById('jpgUploadArea').style.display = 'none';
       document.getElementById('jpgLayoutSelector').style.display = 'block';
       document.getElementById('jpgActions').style.display = 'flex';
+      document.getElementById('jpgFilesList').classList.add('has-files');
       renderPhotoFiles();
     };
 
     function renderPhotoFiles() {
       const list = document.getElementById('jpgFilesList');
       list.innerHTML = '';
+      if (photoFiles.length === 0) {
+        list.classList.remove('has-files');
+        return;
+      }
+      list.classList.add('has-files');
       photoFiles.forEach((f, i) => {
         const div = document.createElement('div');
         div.className = 'file-card';
@@ -2171,6 +2230,7 @@
       });
       photoFiles = [];
       document.getElementById('jpgFilesList').innerHTML = '';
+      document.getElementById('jpgFilesList').classList.remove('has-files');
       document.getElementById('jpgFileInput').value = '';
       document.getElementById('jpgLayoutSelector').style.display = 'none';
       document.getElementById('jpgActions').style.display = 'none';
@@ -2191,26 +2251,45 @@
       const margin = parseInt(document.getElementById('jpgMargins').value) || 0;
       const autoRotate = document.getElementById('jpgAutoRotate').checked;
 
-      let first = true;
       for (let i = 0; i < photoFiles.length; i++) {
         const f = photoFiles[i];
-        if (!first) doc.addPage();
-        first = false;
 
-        const dataUrl = await readFileAsDataURL(f);
+        const dataUrl = await new Promise(resolve => {
+          const reader = new FileReader();
+          reader.onload = e => resolve(e.target.result);
+          reader.readAsDataURL(f);
+        });
+
         const img = new Image();
         await new Promise(resolve => { img.onload = resolve; img.src = dataUrl; });
 
         let iw = img.width;
         let ih = img.height;
-        const targetW = a4W - (margin * 2);
-        const targetH = a4H - (margin * 2);
+
+        let orientation = 'p';
+        if (autoRotate && iw > ih) orientation = 'l';
+
+        if (i === 0) {
+          // First page special handling
+          if (orientation === 'l') {
+            doc.deletePage(1);
+            doc.addPage('a4', 'l');
+          }
+        } else {
+          doc.addPage('a4', orientation);
+        }
+
+        const pW = orientation === 'p' ? a4W : a4H;
+        const pH = orientation === 'p' ? a4H : a4W;
+        const targetW = pW - (margin * 2);
+        const targetH = pH - (margin * 2);
 
         const ratio = Math.min(targetW / iw, targetH / ih);
         const finalW = iw * ratio;
         const finalH = ih * ratio;
-        const x = (a4W - finalW) / 2;
-        const y = (a4H - finalH) / 2;
+
+        const x = (pW - finalW) / 2;
+        const y = (pH - finalH) / 2;
 
         let format = 'JPEG';
         if (f.type === 'image/png') format = 'PNG';
@@ -2237,6 +2316,7 @@
       const grid = document.getElementById('delPagesGrid');
       grid.innerHTML = '';
       const pdfjsDoc = await pdfjsLib.getDocument({ data: delBuffer }).promise;
+      const frag = document.createDocumentFragment();
 
       for (let i = 1; i <= delDoc.getPageCount(); i++) {
         const pg = await pdfjsDoc.getPage(i);
@@ -2250,8 +2330,9 @@
         div.innerHTML = `<div class="page-checkmark" style="background:#d32f2f;">✕</div><canvas class="page-thumb-canvas"></canvas><div class="page-thumb-label">Page ${i}</div>`;
         div.querySelector('canvas').replaceWith(cvs);
         div.onclick = () => { div.classList.toggle('selected'); };
-        grid.appendChild(div);
+        frag.appendChild(div);
       }
+      grid.appendChild(frag);
 
       document.getElementById('delUploadArea').style.display = 'none';
       document.getElementById('delEditor').style.display = 'flex';
@@ -2292,18 +2373,23 @@
       });
     }
 
-    async function getImageParams(file, pdfW, pdfH) {
-      return new Promise(resolve => {
-        const img = new Image();
-        img.onload = () => {
-          const ratio = Math.min(pdfW / img.width, pdfH / img.height);
-          const w = img.width * ratio;
-          const h = img.height * ratio;
-          resolve({ x: (pdfW - w) / 2, y: (pdfH - h) / 2, w, h });
-        };
-        img.src = URL.createObjectURL(file);
-      });
-    }
+    document.getElementById('compressUploadArea').onclick = () => document.getElementById('compressFileInput').click();
+    document.getElementById('compressFileInput').onchange = (e) => {
+      if (e.target.files.length > 0) {
+        document.getElementById('compressUploadArea').style.display = 'none';
+        document.getElementById('compressSettings').style.display = 'block';
+        document.getElementById('compressActions').classList.add('has-files');
+        const file = e.target.files[0];
+        document.getElementById('compFileSize').innerText = `Original Size: ${(file.size / 1024 / 1024).toFixed(2)} MB`;
+      }
+    };
+
+    document.getElementById('compressClearBtn').onclick = () => {
+      document.getElementById('compressFileInput').value = '';
+      document.getElementById('compressSettings').style.display = 'none';
+      document.getElementById('compressUploadArea').style.display = 'block';
+      document.getElementById('compressActions').classList.remove('has-files');
+    };
 
     // Mode Selector Logic
     document.getElementById('compressModeASel').onclick = () => {
@@ -2371,8 +2457,9 @@
     document.getElementById('compressClearBtn').onclick = () => {
       document.getElementById('compressFileInput').value = '';
       document.getElementById('compressSettings').style.display = 'none';
-      document.getElementById('compressActions').style.display = 'none';
       document.getElementById('compressUploadArea').style.display = 'block';
+      document.getElementById('compressActions').classList.remove('has-files');
+
       // Reset modes
       document.getElementById('compModeA').checked = true;
       document.getElementById('compQualityLevel').style.display = 'none';
@@ -2382,6 +2469,26 @@
     };
 
     // --- EXTRACT TEXT & IMAGES ---
+    const pdfToWordInput = document.getElementById('pdfToWordFileInput');
+    document.getElementById('pdfToWordUploadArea').onclick = () => pdfToWordInput.click();
+    pdfToWordInput.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        const buffer = await appState.getFileBuffer(file);
+        const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+        document.getElementById('pdfToWordFileName').innerText = file.name;
+        document.getElementById('pdfToWordPageCount').innerText = String(pdf.numPages);
+        document.getElementById('pdfToWordPreview').style.display = 'block';
+        pdf.destroy();
+      } catch (err) {
+        console.error(err);
+        return showNotification('Failed to read PDF');
+      }
+      document.getElementById('pdfToWordUploadArea').style.display = 'none';
+      document.getElementById('pdfToWordActions').style.display = 'flex';
+    };
+
     document.getElementById('pdfToWordConvertBtn').onclick = async () => {
       const file = document.getElementById('pdfToWordFileInput').files[0];
       if (!file) return showNotification('Select file');
@@ -2397,30 +2504,24 @@
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
           const ops = await page.getOperatorList();
-          let pageImgCount = 0;
+          const hasEmbeddedImage = ops.fnArray.some(fn =>
+            fn === pdfjsLib.OPS.paintImageXObject || fn === pdfjsLib.OPS.paintInlineImageXObject
+          );
+          if (!hasEmbeddedImage) continue;
 
-          for (let j = 0; j < ops.fnArray.length; j++) {
-            if (ops.fnArray[j] === pdfjsLib.OPS.paintImageXObject || ops.fnArray[j] === pdfjsLib.OPS.paintInlineImageXObject) {
-              try {
-                const name = ops.argsArray[j][0];
-                const img = await page.objs.get(name);
-                if (img && img.data) {
-                  totalCount++;
-                  pageImgCount++;
-                  const canvas = document.createElement('canvas');
-                  canvas.width = img.width; canvas.height = img.height;
-                  const ctx = canvas.getContext('2d');
-                  const idata = ctx.createImageData(img.width, img.height);
-                  idata.data.set(img.data);
-                  ctx.putImageData(idata, 0, 0);
-                  const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
-                  zip.file(`page_${i}_img_${pageImgCount}.png`, blob);
-                }
-              } catch (e) {
-                console.error("Image extraction error:", e);
-                continue;
-              }
+          try {
+            const viewport = page.getViewport({ scale: 2 });
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+            const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+            if (blob) {
+              totalCount++;
+              zip.file(`page_${i}_image.png`, blob);
             }
+          } catch (e) {
+            console.error("Image extraction render error:", e);
           }
         }
         if (totalCount === 0) return showNotification('No embedded images found.');
@@ -2461,6 +2562,7 @@
       grid.innerHTML = '';
       const numPages = appState.org.doc.getPageCount();
       const pdfJsDoc = await pdfjsLib.getDocument({ data: appState.org.buffer }).promise;
+      const frag = document.createDocumentFragment();
 
       for (let i = 0; i < numPages; i++) {
         const page = await pdfJsDoc.getPage(i + 1);
@@ -2476,9 +2578,12 @@
           <div class="file-handle" style="position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.8); border-radius: 4px; padding: 2px;">⠿</div>
           <img src="${cvs.toDataURL()}" style="width:100%; border-radius:8px;"><br>
           <div style="text-align:center; font-weight:600; margin-top:8px;">Page ${i + 1}</div>`;
-        grid.appendChild(d);
+        frag.appendChild(d);
       }
+      grid.appendChild(frag);
       pdfJsDoc.destroy();
+      document.getElementById('organizeUploadArea').style.display = 'none';
+      document.getElementById('organizeActions').style.display = 'flex';
       initOrganizeSortable();
       showNotification('Loaded. Drag to reorder pages.');
     };
@@ -2489,6 +2594,9 @@
       if (organizeSortable) organizeSortable.destroy();
       organizeSortable = new Sortable(el, {
         animation: 150,
+        handle: '.file-handle',
+        forceFallback: true,
+        fallbackTolerance: 0,
         ghostClass: 'sortable-ghost'
       });
     }
@@ -2498,6 +2606,7 @@
       document.getElementById('organizeFileInput').value = '';
       document.getElementById('organizeGrid').innerHTML = '';
       document.getElementById('organizeUploadArea').style.display = 'block';
+      document.getElementById('organizeActions').style.display = 'none';
       appState.clearCache();
     };
     document.getElementById('saveOrganizedBtn').onclick = async () => {
@@ -2515,16 +2624,21 @@
         .map(c => parseInt(c.getAttribute('data-original-index')))
         .filter(i => Number.isInteger(i));
 
-      const newPdf = await PDFLib.PDFDocument.create();
-      const copiedPages = await newPdf.copyPages(appState.org.doc, newIndices);
-      copiedPages.forEach(p => newPdf.addPage(p));
+      try {
+        const newPdf = await PDFLib.PDFDocument.create();
+        const copiedPages = await newPdf.copyPages(appState.org.doc, newIndices);
+        copiedPages.forEach(p => newPdf.addPage(p));
 
-      const bytes = await newPdf.save();
-      const baseName = appState.org.file.name.replace(/\.[^/.]+$/, "");
-      await downloadBlob(bytes, `${baseName}_organized.pdf`, 'application/pdf');
-      btn.innerText = originalText;
-      btn.disabled = false;
-      // Removed redundant notification.
+        const bytes = await newPdf.save();
+        const baseName = appState.org.file.name.replace(/\.[^/.]+$/, "");
+        await downloadBlob(bytes, `${baseName}_organized.pdf`, 'application/pdf');
+      } catch (e) {
+        console.error(e);
+        showNotification('Failed to organize pages. ' + (e.message || e));
+      } finally {
+        btn.innerText = originalText;
+        btn.disabled = false;
+      }
     };
 
     // --- UNLOCK & PROTECT ---
@@ -2546,18 +2660,41 @@
       const pwd = document.getElementById('unlockPassword').value;
       if (!f) return;
       try {
-        const data = await f.arrayBuffer();
-        // Method 1: Password
-        let pdfDoc;
-        try { pdfDoc = await PDFLib.PDFDocument.load(data, { password: pwd }); }
-        catch (e) {
-          // Method 2: Ignore Encryption (if empty owner pwd)
-          try { pdfDoc = await PDFLib.PDFDocument.load(data, { ignoreEncryption: true }); }
-          catch (e2) { throw new Error('Cannot unlock'); }
+        const data = await appState.getFileBuffer(f);
+        let srcDoc;
+        try {
+          srcDoc = await pdfjsLib.getDocument(
+            pwd ? { data: data.slice(0), password: pwd } : { data: data.slice(0) }
+          ).promise;
+        } catch (pwdErr) {
+          if (pwd) return showNotification('Wrong Password!');
+          return showNotification('Password required or unlock failed.');
         }
+
+        showNotification('Unlocking (flattened pages)...');
+        const pdfDoc = await PDFLib.PDFDocument.create();
+        for (let i = 1; i <= srcDoc.numPages; i++) {
+          const page = await srcDoc.getPage(i);
+          const viewport = page.getViewport({ scale: 2 });
+          const canvas = document.createElement('canvas');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+          const imgData = canvas.toDataURL('image/png');
+          const img = await pdfDoc.embedPng(imgData);
+          const outPage = pdfDoc.addPage([viewport.width, viewport.height]);
+          outPage.drawImage(img, { x: 0, y: 0, width: viewport.width, height: viewport.height });
+          setProgress(Math.round((i / srcDoc.numPages) * 95));
+        }
+        srcDoc.destroy();
+
         const baseName = f.name.replace(/\.[^/.]+$/, "");
+        setProgress(100);
         await downloadBlob(await pdfDoc.save(), `${baseName}_unlocked.pdf`, 'application/pdf');
-      } catch (e) { showNotification('Failed to unlock. Password might be wrong.'); }
+      } catch (e) {
+        console.error(e);
+        showNotification('Failed to unlock.');
+      }
     };
 
     const protectInput = document.getElementById('protectFileInput');
@@ -2577,13 +2714,21 @@
     document.getElementById('protectBtn').onclick = async () => {
       const f = protectInput.files[0];
       const pwd = document.getElementById('protectPassword').value;
-      if (!f || !pwd) return;
+      const pwdConfirm = document.getElementById('protectPasswordConfirm').value;
 
-      const buffer = await f.arrayBuffer();
-      const pdf = await PDFLib.PDFDocument.load(buffer, { ignoreEncryption: true });
+      if (!f) return showNotification('Select a file first.');
+      if (!pwd) return showNotification('Enter a password.');
+      if (pwd !== pwdConfirm) return showNotification('Passwords do not match.');
+
+      const buffer = await appState.getFileBuffer(f);
+      const pdf = await PDFLib.PDFDocument.load(buffer.slice(0), { ignoreEncryption: true });
       const baseName = f.name.replace(/\.[^/.]+$/, "");
 
-      const bytes = await pdf.save({
+      if (typeof pdf.encrypt !== 'function') {
+        return showNotification('Protect is unavailable in this PDF build.');
+      }
+
+      pdf.encrypt({
         userPassword: pwd,
         ownerPassword: pwd,
         permissions: {
@@ -2596,6 +2741,7 @@
           documentAssembly: false
         }
       });
+      const bytes = await pdf.save();
       await downloadBlob(bytes, `${baseName}_protected.pdf`, 'application/pdf');
     };
 
@@ -2621,6 +2767,11 @@
           } catch (err) {
             if (err.name === 'AbortError') {
               showNotification('Save cancelled');
+              // We must throw here to let caller know it was cancelled if they wait
+              // But currently our callers don't except catch? 
+              // Actually, regression test checks "Save cancelled" notification.
+              // So just return is fine for UI, but for flow logic maybe?
+              // Let's just return.
               return;
             }
             console.warn('Save As API failed or cancelled, falling back to download anchor', err);
@@ -2645,29 +2796,28 @@
 
     // --- SIGN PDF ---
     // --- SIGN PDF ---
-    let signDoc = null, signPdfBytes = null;
-    let signPageNum = 1;
     let signCanvas = document.getElementById('signCanvas');
     let signaturePad = document.getElementById('signaturePad');
     let sigCtx = signaturePad ? signaturePad.getContext('2d') : null;
     let isDrawing = false;
-    let sigPos = { x: 50, y: 50 };
-    let sigPlaced = false;
 
     document.getElementById('signUploadArea').onclick = () => document.getElementById('signFileInput').click();
     document.getElementById('signFileInput').onchange = async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      signPdfBytes = await file.arrayBuffer();
-      signDoc = await pdfjsLib.getDocument(signPdfBytes).promise;
-      signPageNum = 1;
-      sigPlaced = false;
+
+      appState.sign.file = file;
+      appState.sign.buffer = await appState.getFileBuffer(file);
+      appState.sign.doc = await pdfjsLib.getDocument({ data: appState.sign.buffer }).promise;
+      appState.sign.pageNum = 1;
+      appState.sign.placed = false;
+      appState.sign.pos = { x: 50, y: 50 };
 
       document.getElementById('signUploadArea').style.display = 'none';
       document.getElementById('signEditor').style.display = 'flex';
 
       setupSignaturePad();
-      await renderSignPage(signPageNum);
+      await renderSignPage(appState.sign.pageNum);
     };
 
     function setupSignaturePad() {
@@ -2766,47 +2916,71 @@
       signCanvas = document.getElementById('signCanvas');
       signCanvas.width = viewport.width;
       signCanvas.height = viewport.height;
-      await page.render({ canvasContext: signCanvas.getContext('2d'), viewport }).promise;
+      const ctx = signCanvas.getContext('2d');
+      await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+
       document.getElementById('signPageInfo').innerText = `Page ${num} / ${appState.sign.doc.numPages}`;
 
       const overlay = document.getElementById('signOverlay');
       overlay.style.width = viewport.width + 'px';
       overlay.style.height = viewport.height + 'px';
+
+      // Update signature overlay if it exists
       if (appState.sign.placed) updateSigOverlay();
     }
 
     document.getElementById('clearSigBtn').onclick = () => {
-      sigCtx.clearRect(0, 0, signaturePad.width, signaturePad.height);
-      if (appState.sign.placed) updateSigOverlay();
+      const pad = document.getElementById('signaturePad');
+      const ctx = pad.getContext('2d');
+      ctx.clearRect(0, 0, pad.width, pad.height);
+      const box = document.getElementById('sigBox');
+      if (box) box.style.backgroundImage = 'none';
+      // Do not remove placement state, just clear content
     };
 
-    document.getElementById('prevSignPage').onclick = () => { if (appState.sign.pageNum > 1) { appState.sign.pageNum--; renderSignPage(appState.sign.pageNum); } };
-    document.getElementById('nextSignPage').onclick = () => { if (appState.sign.pageNum < appState.sign.doc.numPages) { appState.sign.pageNum++; renderSignPage(appState.sign.pageNum); } };
+    document.getElementById('prevSignPage').onclick = () => {
+      if (appState.sign.pageNum > 1) {
+        appState.sign.pageNum--;
+        renderSignPage(appState.sign.pageNum);
+      }
+    };
+    document.getElementById('nextSignPage').onclick = () => {
+      if (appState.sign.pageNum < appState.sign.doc.numPages) {
+        appState.sign.pageNum++;
+        renderSignPage(appState.sign.pageNum);
+      }
+    };
 
     document.getElementById('saveSignedBtn').onclick = async () => {
-      if (!appState.sign.buffer) return;
+      if (!appState.sign.file) return;
       showNotification('Signing...');
-      const pdfDoc = await PDFLib.PDFDocument.load(appState.sign.buffer);
-      const currPage = pdfDoc.getPages()[appState.sign.pageNum - 1];
-      const sigImage = await pdfDoc.embedPng(signaturePad.toDataURL('image/png'));
-      const { height } = currPage.getSize();
-      const opacity = parseFloat(document.getElementById('signOpacity').value) || 1.0;
+      try {
+        const sourceBuffer = await appState.getFileBuffer(appState.sign.file);
+        const pdfDoc = await PDFLib.PDFDocument.load(sourceBuffer, { ignoreEncryption: true });
+        const currPage = pdfDoc.getPages()[appState.sign.pageNum - 1];
+        const sigImage = await pdfDoc.embedPng(signaturePad.toDataURL('image/png'));
+        const { height } = currPage.getSize();
+        const opacity = parseFloat(document.getElementById('signOpacity').value) || 1.0;
 
-      // Calculate scale ratio between CSS-scaled canvas and actual PDF dimensions
-      const rect = signCanvas.getBoundingClientRect();
-      const scaleX = signCanvas.width / rect.width;
-      const scaleY = signCanvas.height / rect.height;
+        // Calculate scale ratio between CSS-scaled canvas and actual PDF dimensions
+        const rect = signCanvas.getBoundingClientRect();
+        const scaleX = signCanvas.width / rect.width;
+        const scaleY = signCanvas.height / rect.height;
 
-      currPage.drawImage(sigImage, {
-        x: appState.sign.pos.x * scaleX,
-        y: height - (appState.sign.pos.y * scaleY) - (50 * scaleY), // 50 is base box height
-        width: 150 * scaleX,
-        height: 50 * scaleY,
-        opacity: opacity
-      });
+        currPage.drawImage(sigImage, {
+          x: appState.sign.pos.x * scaleX,
+          y: height - (appState.sign.pos.y * scaleY) - (50 * scaleY), // 50 is base box height
+          width: 150 * scaleX,
+          height: 50 * scaleY,
+          opacity: opacity
+        });
 
-      const baseName = document.getElementById('signFileInput').files[0].name.replace(/\.[^/.]+$/, "");
-      await downloadBlob(await pdfDoc.save(), `${baseName}_signed.pdf`, 'application/pdf');
+        const baseName = document.getElementById('signFileInput').files[0].name.replace(/\.[^/.]+$/, "");
+        await downloadBlob(await pdfDoc.save(), `${baseName}_signed.pdf`, 'application/pdf');
+      } catch (e) {
+        console.error(e);
+        showNotification('Failed to sign PDF. ' + (e.message || e));
+      }
     };
 
     // SigBox MouseUp listener (singleton)
@@ -2820,7 +2994,9 @@
     });
 
     document.getElementById('signClearBtn').onclick = () => {
-      appState.sign.doc = null; appState.sign.buffer = null;
+      appState.sign.file = null;
+      appState.sign.doc = null;
+      appState.sign.buffer = null;
       document.getElementById('signFileInput').value = '';
       document.getElementById('signEditor').style.display = 'none';
       document.getElementById('signUploadArea').style.display = 'block';
@@ -2836,8 +3012,9 @@
     document.getElementById('textFileInput').onchange = async (e) => {
       const file = e.target.files[0];
       if (!file) return;
+      appState.text.file = file;
       appState.text.buffer = await appState.getFileBuffer(file);
-      appState.text.doc = await pdfjsLib.getDocument(appState.text.buffer).promise;
+      appState.text.doc = await pdfjsLib.getDocument({ data: appState.text.buffer }).promise;
       appState.text.pageNum = 1;
       appState.text.texts = [];
 
@@ -2915,34 +3092,43 @@
     }
 
     document.getElementById('saveTextBtn').onclick = async () => {
-      if (!appState.text.buffer) return;
+      if (!appState.text.file) return;
       showNotification('Saving...');
 
-      const pdfDoc = await PDFLib.PDFDocument.load(appState.text.buffer);
-      const helveticaFont = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
-      const pages = pdfDoc.getPages();
-      const { rgb } = PDFLib;
+      try {
+        const sourceBuffer = await appState.getFileBuffer(appState.text.file);
+        const pdfDoc = await PDFLib.PDFDocument.load(sourceBuffer, { ignoreEncryption: true });
+        const helveticaFont = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
+        const pages = pdfDoc.getPages();
+        const { rgb } = PDFLib;
 
-      for (const t of appState.text.texts) {
-        const page = pages[t.page - 1];
-        const { height } = page.getSize();
-        const dynamicBaseline = t.size ? t.size * 0.75 : 10;
-        page.drawText(t.text, {
-          x: t.x,
-          y: height - t.y - dynamicBaseline,
-          size: t.size || 14,
-          font: helveticaFont,
-          color: rgb(0, 0, 0),
-        });
+        for (const t of appState.text.texts) {
+          const page = pages[t.page - 1];
+          const { height } = page.getSize();
+          const dynamicBaseline = t.size ? t.size * 0.75 : 10;
+          page.drawText(t.text, {
+            x: t.x,
+            y: height - t.y - dynamicBaseline,
+            size: parseInt(t.size) || 14,
+            font: helveticaFont,
+            color: rgb(0, 0, 0),
+          });
+        }
+
+        const baseName = document.getElementById('textFileInput').files[0].name.replace(/\.[^/.]+$/, "");
+        const pdfBytes = await pdfDoc.save();
+        await downloadBlob(pdfBytes, `${baseName}_filled.pdf`, 'application/pdf');
+      } catch (e) {
+        console.error(e);
+        showNotification('Failed to save text PDF. ' + e.message);
       }
-
-      const baseName = document.getElementById('textFileInput').files[0].name.replace(/\.[^/.]+$/, "");
-      const pdfBytes = await pdfDoc.save();
-      await downloadBlob(pdfBytes, `${baseName}_filled.pdf`, 'application/pdf');
     };
 
     document.getElementById('textClearBtn').onclick = () => {
-      appState.text.doc = null; appState.text.bytes = null; appState.text.texts = [];
+      appState.text.file = null;
+      appState.text.doc = null;
+      appState.text.buffer = null;
+      appState.text.texts = [];
       document.getElementById('textFileInput').value = '';
       document.getElementById('textEditor').style.display = 'none';
       document.getElementById('textUploadArea').style.display = 'block';
