@@ -4,8 +4,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TonfernPDF v3.0.3 - Local PDF Toolkit</title>
-  <meta name="version" content="3.0.3">
+  <title>TonfernPDF v3.0.4 - Local PDF Toolkit</title>
+  <meta name="version" content="3.0.4">
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://unpkg.com/pdf-lib-plus-encrypt@1.1.0/dist/pdf-lib-plus-encrypt.min.js"></script>
@@ -2489,6 +2489,19 @@
       document.getElementById('pdfToWordActions').style.display = 'flex';
     };
 
+    // --- Thai PUA Fix Helper ---
+    const thaiPUAMap = {
+      '\uF700': '\u0E10', '\uF70F': '\u0E0D',
+      '\uF705': '\u0E48', '\uF706': '\u0E49', '\uF707': '\u0E4A', '\uF708': '\u0E4B', '\uF709': '\u0E4C',
+      '\uF70A': '\u0E48', '\uF70B': '\u0E49', '\uF70C': '\u0E4A', '\uF70D': '\u0E4B', '\uF70E': '\u0E4C',
+      '\uF710': '\u0E31', '\uF712': '\u0E47',
+      '\uF713': '\u0E48', '\uF714': '\u0E49', '\uF715': '\u0E4A', '\uF716': '\u0E4B', '\uF717': '\u0E4C'
+    };
+    function fixThaiPUA(text) {
+      if (!text) return "";
+      return text.replace(/[\uF700-\uF71A]/g, (char) => thaiPUAMap[char] || char);
+    }
+
     document.getElementById('pdfToWordConvertBtn').onclick = async () => {
       const file = document.getElementById('pdfToWordFileInput').files[0];
       if (!file) return showNotification('Select file');
@@ -2529,13 +2542,14 @@
         const baseName = file.name.replace(/\.[^/.]+$/, "");
         await downloadBlob(content, `${baseName}_extracted_images.zip`, 'application/zip');
       } else {
-        showNotification('Extracting text content...');
+        showNotification('Extracting text content (with Thai PUA fix)...');
         const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
         let text = '';
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
           const content = await page.getTextContent();
-          text += `--- Page ${i} ---\n` + content.items.map(s => s.str).join(' ') + '\n\n';
+          const rawText = content.items.map(s => s.str).join(' ');
+          text += `--- Page ${i} ---\n` + fixThaiPUA(rawText) + '\n\n';
         }
         const blob = new Blob([text], { type: 'text/plain' });
         const baseName = file.name.replace(/\.[^/.]+$/, "");
