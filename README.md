@@ -1,8 +1,8 @@
-# 🪭 TonfernPDF v3.0.4 - เครื่องมือจัดการ PDF ระดับมืออาชีพ (Local-First)
+# 🪭 TonfernPDF v4.0 - เครื่องมือจัดการ PDF ระดับมืออาชีพ (Local-First)
 
 **TonfernPDF** คือเว็บแอปพลิเคชันระดับพรีเมียมสำหรับการจัดการไฟล์ PDF แบบท้องถิ่น (Local-first) ที่ออกแบบมาเพื่อประสิทธิภาพสูงสุดโดยไม่ทิ้งเรื่องความปลอดภัยของข้อมูล มั่นใจได้ว่าไฟล์ของคุณ **จะไม่ถูกอัปโหลดขึ้นเซิร์ฟเวอร์ใดๆ** และประมวลผลภายในเครื่องของคุณ 100%
 
-![Version](https://img.shields.io/badge/version-3.0.4-D40018?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-4.0-D40018?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-FFD700?style=for-the-badge)
 ![Privacy](https://img.shields.io/badge/Privacy-100%25_Local-2E7D32?style=for-the-badge)
 
@@ -76,7 +76,14 @@ TonfernPDF ถูกพัฒนาด้วยมาตรฐานเว็บ
 
 ---
 
-## ✅ บันทึกการปรับปรุงล่าสุด (Latest Updates v3.0.4)
+## ✅ บันทึกการปรับปรุงล่าสุด (Latest Updates v4.0)
+- **🎨 Premium UI Upgrade**: เปลี่ยนไอคอนเครื่องมือพื้นฐานทั้งหมดเป็นหน้าตาแบบ Lucide-style Premium Vector SVGs สวยงาม ทันสมัย และดูเป็นมืออาชีพยิ่งขึ้น (ยกเลิกระบบแสดงผล Emoji แบบเก่าเพื่อให้สีสันคมกริบ)
+
+## 🐛 การแก้ไขก่อนหน้า (v3.0.5)
+- **🐛 Core Fixes & Stability**: แก้ไขข้อผิดพลาดทาง Syntax ในไฟล์หลัก ("Invalid character" และ "Unterminated template literal") ช่วยให้หน้าเว็บกลับมาเปิดใช้งานและทำงานได้อย่างสมบูรณ์แบบ
+- **⚡ Architecture Refinement**: เพิ่มฟีเจอร์เครื่องมือในรูปแบบ Local-First ที่รันผ่านเบราว์เซอร์ 100% ได้อย่างเสถียร จัดการอัปโหลดไฟล์หลายไฟล์, โชว์ Thumbnail, และประมวลผลได้อย่างลื่นไหล
+
+## 🐛 การแก้ไขก่อนหน้า (v3.0.4)
 - **🇹🇭 Thai Language Fix**: เพิ่มระบบตรวจจับและแก้ไขสระลอย/วรรณยุกต์ซ้อน (PUA Correction) สำหรับไฟล์ PDF ภาษาไทยที่สร้างจากฟอนต์รุ่นเก่า (เช่น Angsana, Dillenia) ให้สามารถ Copy และ Extract Text ออกมาได้อย่างถูกต้อง 100%
 
 ## 🐛 การแก้ไขก่อนหน้า (v3.0.3)
